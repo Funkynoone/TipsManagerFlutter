@@ -14,6 +14,7 @@ class WorkersTab extends StatefulWidget {
 
 class _WorkersTabState extends State<WorkersTab> {
   final _nameController = TextEditingController();
+  final _scrollController = ScrollController(); // Add scroll controller
   String _selectedCategory = 'Service';
   List<bool> _selectedDays = List.filled(7, false);
   bool _isEditing = false;
@@ -25,6 +26,7 @@ class _WorkersTabState extends State<WorkersTab> {
   @override
   void dispose() {
     _nameController.dispose();
+    _scrollController.dispose(); // Dispose scroll controller
     super.dispose();
   }
 
@@ -89,6 +91,15 @@ class _WorkersTabState extends State<WorkersTab> {
     _isEditing = true;
     _editingWorkerName = worker.name;
     setState(() {});
+
+    // Scroll to top when editing
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeInOut,
+      );
+    });
   }
 
   void _deleteWorker(String name) {
@@ -133,6 +144,7 @@ class _WorkersTabState extends State<WorkersTab> {
           ..sort((a, b) => a.name.compareTo(b.name));
 
         return SingleChildScrollView(
+          controller: _scrollController, // Add controller to SingleChildScrollView
           padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -244,27 +256,76 @@ class _WorkersTabState extends State<WorkersTab> {
               else
                 ...workers.map((worker) => Card(
                   margin: const EdgeInsets.only(bottom: 8),
-                  child: ListTile(
-                    title: Text(worker.name),
-                    subtitle: Text('${worker.category} - Rating: x${worker.rating}'),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Work days indicator
+                        // First row: Name and action buttons
+                        Row(
+                          children: [
+                            // Name takes all available space
+                            Expanded(
+                              child: Text(
+                                worker.name,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                            ),
+                            // Action buttons
+                            IconButton(
+                              icon: const Icon(Icons.edit, size: 20),
+                              onPressed: () => _editWorker(worker),
+                              padding: const EdgeInsets.all(4),
+                              constraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                              onPressed: () => _deleteWorker(worker.name),
+                              padding: const EdgeInsets.all(4),
+                              constraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        // Second row: Category and rating
+                        Row(
+                          children: [
+                            Text(
+                              '${worker.category} • Rating: x${worker.rating}',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        // Third row: Work days indicator
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: Colors.grey[200],
-                            borderRadius: BorderRadius.circular(4),
+                            color: Colors.grey[100],
+                            borderRadius: BorderRadius.circular(6),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: List.generate(7, (index) {
                               final isWorking = worker.workDays.contains(index);
                               return Container(
-                                width: 20,
-                                height: 20,
-                                margin: const EdgeInsets.only(left: 2),
+                                width: 24,
+                                height: 24,
+                                margin: const EdgeInsets.only(right: 4),
                                 decoration: BoxDecoration(
                                   color: isWorking ? Colors.green : Colors.grey[300],
                                   borderRadius: BorderRadius.circular(4),
@@ -282,14 +343,6 @@ class _WorkersTabState extends State<WorkersTab> {
                               );
                             }),
                           ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.edit),
-                          onPressed: () => _editWorker(worker),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red),
-                          onPressed: () => _deleteWorker(worker.name),
                         ),
                       ],
                     ),
