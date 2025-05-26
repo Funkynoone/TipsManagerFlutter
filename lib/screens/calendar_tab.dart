@@ -26,13 +26,6 @@ class _CalendarTabState extends State<CalendarTab> {
     _selectedDay = ValueNotifier(DateTime.now());
     _focusedDay = DateTime.now();
 
-    // Add focus listener to clear field when focused
-    _tipsFocusNode.addListener(() {
-      if (_tipsFocusNode.hasFocus && _tipsController.text == '0.00') {
-        _tipsController.clear();
-      }
-    });
-
     // Set initial tips value for today
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _updateTipsDisplay();
@@ -56,10 +49,10 @@ class _CalendarTabState extends State<CalendarTab> {
     final dateStr = _getDateString(_selectedDay.value);
     final tipsData = provider.tipsData[dateStr];
 
-    if (tipsData != null) {
+    if (tipsData != null && tipsData.total > 0) {
       _tipsController.text = tipsData.total.toStringAsFixed(2);
     } else {
-      _tipsController.text = '0.00';
+      _tipsController.clear(); // Clear instead of showing 0.00
     }
   }
 
@@ -218,13 +211,8 @@ class _CalendarTabState extends State<CalendarTab> {
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
               contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              hintText: 'Enter amount', // Changed from showing 0.00 to hint text
             ),
-            onTap: () {
-              // Clear the field when tapped if it contains 0.00
-              if (_tipsController.text == '0.00') {
-                _tipsController.clear();
-              }
-            },
           ),
         ),
         const SizedBox(width: 8),
