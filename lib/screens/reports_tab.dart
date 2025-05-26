@@ -1,8 +1,14 @@
 // lib/screens/reports_tab.dart
 
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import '../providers/tips_provider.dart';
 
 class ReportsTab extends StatefulWidget {
@@ -73,6 +79,265 @@ class _ReportsTabState extends State<ReportsTab> {
         );
       },
     );
+  }
+
+  Future<pw.Document> _generatePDFReport() async {
+    if (_reportData == null) {
+      // Return empty document if no data
+      return pw.Document();
+    }
+
+    final pdf = pw.Document();
+    final monthYear = DateFormat('MMMM yyyy').format(DateTime(_selectedYear, _selectedMonth));
+    final workerTotals = _reportData!['workerTotals'] as Map<String, Map<String, dynamic>>;
+
+    // Sort by total descending
+    final sortedEntries = workerTotals.entries.toList()
+      ..sort((a, b) => b.value['total'].compareTo(a.value['total']));
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              // Header
+              pw.Text(
+                'Tips Report - $monthYear',
+                style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold),
+              ),
+              pw.SizedBox(height: 20),
+
+              // Summary
+              pw.Container(
+                padding: const pw.EdgeInsets.all(16),
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(),
+                  borderRadius: pw.BorderRadius.circular(8),
+                ),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text('Monthly Summary', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+                    pw.SizedBox(height: 10),
+                    pw.Text('Total Tips: €${_reportData!['totalTips'].toStringAsFixed(2)}'),
+                    pw.Text('Days with Tips: ${_reportData!['daysWithTips']}'),
+                    pw.Text('Distribution Method: ${_isWeightedDistribution ? 'Daily Weighted' : 'Monthly Equal Split'}'),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 20),
+
+              // Workers table
+              pw.Text('Tips Distribution by Worker', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+              pw.SizedBox(height: 10),
+
+              if (sortedEntries.isNotEmpty)
+                pw.Table(
+                  border: pw.TableBorder.all(),
+                  columnWidths: {
+                    0: const pw.FlexColumnWidth(3),
+                    1: const pw.FlexColumnWidth(2),
+                    2: const pw.FlexColumnWidth(2),
+                    3: const pw.FlexColumnWidth(2),
+                  },
+                  children: [
+                    // Header row
+                    pw.TableRow(
+                      decoration: const pw.BoxDecoration(color: PdfColors.grey300),
+                      children: [
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text('Worker', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text('Total Tips', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text('Days Worked', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text('Avg/Day', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                    // Data rows
+                    ...sortedEntries.map((entry) {
+                      final workerName = entry.key;
+                      final stats = entry.value;
+                      final total = stats['total'] as double;
+                      final days = stats['days'] as int;
+                      final average = days > 0 ? total / days : 0.0;
+
+                      return pw.TableRow(
+                        children: [
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(8),
+                            child: pw.Text(workerName),
+                          ),
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(8),
+                            child: pw.Text('€${total.toStringAsFixed(2)}'),
+                          ),
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(8),
+                            child: pw.Text(days.toString()),
+                          ),
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(8),
+                            child: pw.Text('€${average.toStringAsFixed(2)}'),
+                          ),
+                        ],
+                      );
+                    }),
+                  ],
+                )
+              else
+                pw.Text('No tip data found for the selected month'),
+
+              pw.Spacer(),
+              pw.Text(
+                'Generated on ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}',
+                style: const pw.TextStyle(fontSize: 10),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    return pdf;
+  }
+
+  String _generateCSVReport() {
+    if (_reportData == null) return '';
+
+    final monthYear = DateFormat('MMMM yyyy').format(DateTime(_selectedYear, _selectedMonth));
+    final workerTotals = _reportData!['workerTotals'] as Map<String, Map<String, dynamic>>;
+
+    // Sort by total descending
+    final sortedEntries = workerTotals.entries.toList()
+      ..sort((a, b) => b.value['total'].compareTo(a.value['total']));
+
+    StringBuffer csv = StringBuffer();
+
+    // Header
+    csv.writeln('Tips Report - $monthYear');
+    csv.writeln('Generated on ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}');
+    csv.writeln('');
+
+    // Summary
+    csv.writeln('Summary');
+    csv.writeln('Total Tips,€${_reportData!['totalTips'].toStringAsFixed(2)}');
+    csv.writeln('Days with Tips,${_reportData!['daysWithTips']}');
+    csv.writeln('Distribution Method,${_isWeightedDistribution ? 'Daily Weighted' : 'Monthly Equal Split'}');
+    csv.writeln('');
+
+    // Workers data
+    csv.writeln('Worker,Total Tips,Days Worked,Average per Day');
+
+    for (var entry in sortedEntries) {
+      final workerName = entry.key;
+      final stats = entry.value;
+      final total = stats['total'] as double;
+      final days = stats['days'] as int;
+      final average = days > 0 ? total / days : 0.0;
+
+      csv.writeln('$workerName,€${total.toStringAsFixed(2)},$days,€${average.toStringAsFixed(2)}');
+    }
+
+    return csv.toString();
+  }
+
+  void _showExportDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Export Report'),
+          content: const Text('Choose export format:'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.of(context).pop();
+                await _exportAsCSV();
+              },
+              child: const Text('CSV/Excel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.of(context).pop();
+                await _exportAsPDF();
+              },
+              child: const Text('PDF'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _exportAsCSV() async {
+    try {
+      final csv = _generateCSVReport();
+      final monthYear = DateFormat('yyyy-MM').format(DateTime(_selectedYear, _selectedMonth));
+
+      // Get temporary directory
+      final directory = await getTemporaryDirectory();
+      final file = File('${directory.path}/tips_report_$monthYear.csv');
+      await file.writeAsString(csv);
+
+      // Share the file
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: 'Tips Report for ${DateFormat('MMMM yyyy').format(DateTime(_selectedYear, _selectedMonth))}',
+        subject: 'Tips Report - ${DateFormat('MMMM yyyy').format(DateTime(_selectedYear, _selectedMonth))}',
+      );
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('CSV report exported successfully')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error exporting CSV: $e')),
+      );
+    }
+  }
+
+  Future<void> _exportAsPDF() async {
+    try {
+      final pdf = await _generatePDFReport();
+      final monthYear = DateFormat('yyyy-MM').format(DateTime(_selectedYear, _selectedMonth));
+
+      // Get temporary directory
+      final directory = await getTemporaryDirectory();
+      final file = File('${directory.path}/tips_report_$monthYear.pdf');
+      final pdfBytes = await pdf.save();
+      await file.writeAsBytes(pdfBytes);
+
+      // Share the file
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: 'Tips Report for ${DateFormat('MMMM yyyy').format(DateTime(_selectedYear, _selectedMonth))}',
+        subject: 'Tips Report - ${DateFormat('MMMM yyyy').format(DateTime(_selectedYear, _selectedMonth))}',
+      );
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('PDF report exported successfully')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error exporting PDF: $e')),
+      );
+    }
   }
 
   @override
@@ -410,6 +675,44 @@ class _ReportsTabState extends State<ReportsTab> {
                     ),
                     const SizedBox(height: 16),
                     _buildWorkersTable(),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Export button
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    const Icon(Icons.share, size: 48, color: Colors.blue),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Export & Share Report',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Share this report via email, messaging apps, or save to your device',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _showExportDialog,
+                        icon: const Icon(Icons.file_download),
+                        label: const Text('Export Report'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
